@@ -1,0 +1,2 @@
+﻿Entity modellerini barındırır içerisinde. 
+Veritana gidip gelirken kullanılan modeller burada yer alır.
