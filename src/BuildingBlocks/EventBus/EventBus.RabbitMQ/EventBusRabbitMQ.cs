@@ -18,49 +18,37 @@ namespace EventBus.RabbitMQ
     public class EventBusRabbitMQ : BaseEventBus
     {
         RabbitMQPersistentConnection persistentConnection;
-        private readonly IConnectionFactory _connectionFactory;
+        private readonly IConnectionFactory connectionFactory;
         private readonly IModel consumerChannel;
-
 
         public EventBusRabbitMQ(EventBusConfig config, IServiceProvider serviceProvider) : base(config, serviceProvider)
         {
-            if (config.Connection != null)
+            if (EventBusConfig.Connection != null)
             {
-                //Config connection ? hata verebilir.
-                var connJson = JsonConvert.SerializeObject(EventBusConfig.Connection, new JsonSerializerSettings()
+                if (EventBusConfig.Connection is ConnectionFactory)
+                    connectionFactory = EventBusConfig.Connection as ConnectionFactory;
+                else
                 {
-                    //Self referencing loop detected for preperty
-                    ReferenceLoopHandling = ReferenceLoopHandling.Ignore
-                });
-                // _connectionFactory = JsonConvert.DeserializeObject<ConnectionFactory>(connJson);
+                    var connJson = JsonConvert.SerializeObject(EventBusConfig.Connection, new JsonSerializerSettings()
+                    {
+                        // Self referencing loop detected for property 
+                        ReferenceLoopHandling = ReferenceLoopHandling.Ignore
+                    });
+
+                    connectionFactory = JsonConvert.DeserializeObject<ConnectionFactory>(connJson);
+                }
             }
             else
-            {
-                //_connectionFactory = new ConnectionFactory();
-            }
-            _connectionFactory = new ConnectionFactory
-            {
-                //Erişim izni olmadığı için Trap08'de bulunan rabbitmq'ya erişilemediğini düşünüyorum.
-                //HostName = "EUW-IAP356",
-                ////Port = 5672,
-                //Port = AmqpTcpEndpoint.UseDefaultPort,
-                //UserName = "sqs_rapor",
-                //Password = "Qweasd1*"
-                //HostName = "localhost",
-                ////Port = 5672,
-                //Port = AmqpTcpEndpoint.UseDefaultPort,
-                //UserName = "guest",
-                //Password = "guest"
+                connectionFactory = new ConnectionFactory(); //Create with default values
 
-            };
+            persistentConnection = new RabbitMQPersistentConnection(connectionFactory, config.ConnectionRetryCount);
 
-            persistentConnection = new RabbitMQPersistentConnection(_connectionFactory, config.ConnectionRetryCount);
-            consumerChannel = CreateConsumerChannler();
+            consumerChannel = CreateConsumerChannel();
+
             SubsManager.OnEventRemoved += SubsManager_OnEventRemoved;
-
         }
 
-        private void SubsManager_OnEventRemoved(object? sender, string eventName)
+        private void SubsManager_OnEventRemoved(object sender, string eventName)
         {
             eventName = ProcessEventName(eventName);
 
@@ -68,12 +56,11 @@ namespace EventBus.RabbitMQ
             {
                 persistentConnection.TryConnect();
             }
-            consumerChannel.QueueUnbind(
 
-                queue: eventName,
+            consumerChannel.QueueUnbind(queue: eventName,
                 exchange: EventBusConfig.DefaultTopicName,
-                routingKey: eventName
-                );
+                routingKey: eventName);
+
             if (SubsManager.IsEmpty)
             {
                 consumerChannel.Close();
@@ -91,17 +78,14 @@ namespace EventBus.RabbitMQ
                 .Or<SocketException>()
                 .WaitAndRetry(EventBusConfig.ConnectionRetryCount, retryAttempt => TimeSpan.FromSeconds(Math.Pow(2, retryAttempt)), (ex, time) =>
                 {
-                    //_logger.LogWarning(ex, "Could not publish event: {EventId} after {Timeout}s ({ExceptionMessage})", @event.Id, $"{time.TotalSeconds:n1}", ex.Message);
+                    // log
                 });
 
             var eventName = @event.GetType().Name;
             eventName = ProcessEventName(eventName);
-            //_logger.LogTrace("Creating RabbitMQ channel to publish event: {EventId} ({EventName})", @event.Id, eventName);
 
-            //using var channel = _persistentConnection.CreateModel();
-            //_logger.LogTrace("Declaring RabbitMQ exchange to publish event: {EventId}", @event.Id);
+            consumerChannel.ExchangeDeclare(exchange: EventBusConfig.DefaultTopicName, type: "direct"); // Ensure exchange exists while publishing
 
-            consumerChannel.ExchangeDeclare(exchange: EventBusConfig.DefaultTopicName, type: "direct");
 
             var message = JsonConvert.SerializeObject(@event);
             var body = Encoding.UTF8.GetBytes(message);
@@ -111,18 +95,21 @@ namespace EventBus.RabbitMQ
                 var properties = consumerChannel.CreateBasicProperties();
                 properties.DeliveryMode = 2; // persistent
 
-                //_logger.LogTrace("Publishing event to RabbitMQ: {EventId}", @event.Id);
+                //Declare ve bind işlemlerinin yoruma alınma sebebi publisher uygulaması sadece veriyi exchange'e gönderme işleminden sorumludur. Kuyruğu oluşturma işlemi mesajı subscribe yani consume eden uygulamanın görevidir.
 
-                //Queue create edilmedi ise create edilecek!
-                consumerChannel.QueueDeclare(queue: GetSubName(eventName),
-                   durable: true,
-                   exclusive: false,
-                   autoDelete: false,
-                   arguments: null);
+                //Declare queyi' oluşturur
+                //consumerChannel.QueueDeclare(queue: GetSubName(eventName), // Ensure queue exists while publishing
+                //                     durable: true,
+                //                     exclusive: false,
+                //                     autoDelete: false,
+                //                     arguments: null);
 
+                //Queue ile exchangeyi eşleştirir yani bind eder.
+                //consumerChannel.QueueBind(queue: GetSubName(eventName),
+                //                  exchange: EventBusConfig.DefaultTopicName,
+                //                  routingKey: eventName);
 
-
-
+                //Ve mesajı queue'ye fırlatır.
                 consumerChannel.BasicPublish(
                     exchange: EventBusConfig.DefaultTopicName,
                     routingKey: eventName,
@@ -136,41 +123,46 @@ namespace EventBus.RabbitMQ
         {
             var eventName = typeof(T).Name;
             eventName = ProcessEventName(eventName);
+
             if (!SubsManager.HasSubscriptionsForEvent(eventName))
             {
                 if (!persistentConnection.IsConnected)
                 {
                     persistentConnection.TryConnect();
                 }
-                //Queue daha önce oluşmadıysa burada oluşacak!
-                consumerChannel.QueueDeclare(queue: GetSubName(eventName),
-                    durable: true,
-                    exclusive: false,
-                    autoDelete: false,
-                    arguments: null);
+
+                consumerChannel.QueueDeclare(queue: GetSubName(eventName), // Ensure queue exists while consuming
+                                     durable: true,
+                                     exclusive: false,
+                                     autoDelete: false,
+                                     arguments: null);
 
                 consumerChannel.QueueBind(queue: GetSubName(eventName),
-                    exchange: EventBusConfig.DefaultTopicName,
-                    routingKey: eventName);
+                                  exchange: EventBusConfig.DefaultTopicName,
+                                  routingKey: eventName);
             }
-            SubsManager.AddSubscription<T, TH>();
 
+            SubsManager.AddSubscription<T, TH>();
             StartBasicConsume(eventName);
         }
 
-        public override void Unsubscribe<T, TH>()
+        public override void UnSubscribe<T, TH>()
         {
             SubsManager.RemoveSubscription<T, TH>();
         }
 
-        private IModel CreateConsumerChannler()
+
+        private IModel CreateConsumerChannel()
         {
             if (!persistentConnection.IsConnected)
             {
                 persistentConnection.TryConnect();
             }
+
             var channel = persistentConnection.CreateModel();
-            channel.ExchangeDeclare(exchange: EventBusConfig.DefaultTopicName, type: "direct");
+
+            channel.ExchangeDeclare(exchange: EventBusConfig.DefaultTopicName,
+                                    type: "direct");
 
             return channel;
         }
@@ -180,20 +172,21 @@ namespace EventBus.RabbitMQ
             if (consumerChannel != null)
             {
                 var consumer = new EventingBasicConsumer(consumerChannel);
-                consumer.Received += Consumer_Received;
-                consumerChannel.BasicConsume(
 
+                consumer.Received += Consumer_Received;
+
+                consumerChannel.BasicConsume(
                     queue: GetSubName(eventName),
                     autoAck: false,
                     consumer: consumer);
             }
         }
 
-        private async void Consumer_Received(object? sender, BasicDeliverEventArgs eventArgs)
+        private async void Consumer_Received(object sender, BasicDeliverEventArgs eventArgs)
         {
             var eventName = eventArgs.RoutingKey;
             eventName = ProcessEventName(eventName);
-            var message = Encoding.UTF8.GetString(eventArgs.Body.Span);
+            var message = Encoding.Default.GetString(eventArgs.Body.Span);
 
             try
             {
@@ -201,9 +194,9 @@ namespace EventBus.RabbitMQ
             }
             catch (Exception ex)
             {
-                //logging
-
+                // logging
             }
+
             consumerChannel.BasicAck(eventArgs.DeliveryTag, multiple: false);
         }
     }

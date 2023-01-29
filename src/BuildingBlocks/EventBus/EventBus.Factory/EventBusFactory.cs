@@ -14,12 +14,10 @@ namespace EventBus.Factory
     {
         public static IEventBus Create(EventBusConfig config, IServiceProvider serviceProvider)
         {
-            //return new EventBusRabbitMQ(config, serviceProvider);
             return config.EventBusType switch
             {
                 EventBusType.AzureServiceBus => new EventBusServiceBus(config, serviceProvider),
-                _ =>
-                 new EventBusRabbitMQ(config, serviceProvider),
+                _ => new EventBusRabbitMQ(config, serviceProvider),
             };
         }
     }

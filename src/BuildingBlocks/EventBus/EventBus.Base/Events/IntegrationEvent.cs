@@ -3,8 +3,8 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
-using System.Text.Json.Serialization;
 using System.Threading.Tasks;
+using Newtonsoft.Json;
 
 namespace EventBus.Base.Events
 {
@@ -21,7 +21,7 @@ namespace EventBus.Base.Events
             Id = Guid.NewGuid();
             CreatedDate = DateTime.Now;
         }
-        [Newtonsoft.Json.JsonConstructor]
+        [JsonConstructor]
         public IntegrationEvent(Guid id, DateTime createdDate)
         {
             Id = id;
