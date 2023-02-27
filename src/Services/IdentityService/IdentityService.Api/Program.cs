@@ -3,6 +3,7 @@ using IdentityService.Api.Extensions.Registration;
 using Microsoft.AspNetCore.Hosting.Server.Features;
 using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.Extensions.Configuration;
+using System.Runtime.CompilerServices;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -18,6 +19,7 @@ builder.Services.AddScoped<IIdentityService, IdentityServer.Application.Services
 
 //Configure Consul
 builder.Services.ConfigureConsul(builder.Configuration);
+
 
 var app = builder.Build();
 
@@ -47,4 +49,12 @@ app.Start(); // RegisterWithConsul içerisinde host ve port deðerlerini almak içi
 //Application Register to consul.
 app.RegisterWithConsul(app.Lifetime);
 app.WaitForShutdown(); // RegisterWithConsul içerisinde host ve port deðerlerini almak için eklendi
+
+
+
+
+
 app.Run();
+
+
+ 
