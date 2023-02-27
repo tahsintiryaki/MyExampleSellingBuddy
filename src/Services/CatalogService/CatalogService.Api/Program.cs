@@ -1,6 +1,8 @@
 using CatalogService.Api.Extensions;
 using CatalogService.Api.Infrastructure;
 using CatalogService.Api.Infrastructure.Context;
+using Microsoft.AspNetCore.Hosting.Server.Features;
+using Microsoft.AspNetCore.Hosting.Server;
 
 var builder = WebApplication.CreateBuilder(new WebApplicationOptions
 {
@@ -20,6 +22,8 @@ builder.Services.AddSwaggerGen();
 
 builder.Services.Configure<CatalogSettings>(Configuration.GetSection("CatalogSettings"));
 builder.Services.ConfigureDbContext(builder.Configuration);
+//ConfigureConsul
+builder.Services.ConfigureConsul(Configuration);
 var app = builder.Build();
 
 app.MigrateDbContext<CatalogContext>((context, services) =>
@@ -39,10 +43,17 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
+
 app.UseHttpsRedirection();
 
 app.UseAuthorization();
 
 app.MapControllers();
 
+
+app.Start(); // RegisterWithConsul içerisinde host ve port deðerlerini almak için eklendi
+//Application Register to consul.
+app.RegisterWithConsul(app.Lifetime);
+app.WaitForShutdown(); // RegisterWithConsul içerisinde host ve port deðerlerini almak için eklendi
 app.Run();
+ 
