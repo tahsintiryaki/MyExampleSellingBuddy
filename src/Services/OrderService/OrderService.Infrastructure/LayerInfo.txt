@@ -1,0 +1,2 @@
+﻿*uygulamanın dış dünya ile bağlantı kurduğu bütün işlemler Infrastructure katmanında olmalı.
+*Bu sebeple veritabanı ile yapılacak işlemler bu katmanda olmalı.

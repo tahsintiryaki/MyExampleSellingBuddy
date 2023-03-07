@@ -1,0 +1,1 @@
+﻿*Order için kullanılacak tüm objelerin Implementasyonu Application katmanında yapılmalıdır.(interfaces, mapping  vs.)
